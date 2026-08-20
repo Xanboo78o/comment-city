@@ -3,6 +3,7 @@
 // Adam's pipeline: export SVG at 64-scale -> drop in art/ with the right name -> refresh.
 
 const TILE = 64;
+const BLEED = 10;   // tiles overlap their right/down neighbors so outlines don't double up
 const VIEW_H = TILE * 11;            // 11 tiles of world visible vertically
 const GROUND_TILE_Y = 8;             // ground surface = bottom of tile row 8
 const GROUND_Y = GROUND_TILE_Y * TILE;
@@ -72,9 +73,10 @@ function drawSlot(slot, x, y, w, h, flip) {
   const t = art['the-tile'];
   for (let ty = 0; ty < h; ty += TILE) {
     for (let tx = 0; tx < w; tx += TILE) {
-      // +1px bleed except at the footprint edge, so seams never show background
-      const tw = Math.min(TILE, w - tx) + (tx + TILE < w ? 1 : 0);
-      const th = Math.min(TILE, h - ty) + (ty + TILE < h ? 1 : 0);
+      // overlap into the next tile so outlines merge into one line (not doubled);
+      // no bleed past the footprint edge
+      const tw = (tx + TILE < w) ? TILE + BLEED : Math.min(TILE, w - tx);
+      const th = (ty + TILE < h) ? TILE + BLEED : Math.min(TILE, h - ty);
       if (t && t.ok) ctx.drawImage(t.img, x + tx, y + ty, tw, th);
       else { ctx.fillStyle = '#f0f'; ctx.fillRect(x + tx, y + ty, tw, th); }
     }
@@ -98,7 +100,7 @@ function tileStrip(slot, y, fromX, toX) {
   for (let tx = startTx; tx <= endTx; tx++) {
     if (tx < 0 || tx >= WORLD_W_TILES) continue;
     const a = art[slot];
-    if (a && a.ok) ctx.drawImage(a.img, tx * TILE, y, TILE + 1, TILE + 1);
+    if (a && a.ok) ctx.drawImage(a.img, tx * TILE, y, TILE + BLEED, TILE + BLEED);
     else drawSlot(slot, tx * TILE, y, TILE, TILE);
   }
 }
