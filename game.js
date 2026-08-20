@@ -67,7 +67,7 @@ function loadArt(slot) {
   art[slot] = entry;
   return entry;
 }
-['the-tile', 'dirt', 'grass', 'asphalt', 'road-center', 'road-dash', 'road-line', 'car', 'player', 'npc',
+['the-tile', 'dirt', 'grass', 'asphalt', 'asphalt-crack', 'road-center', 'road-dash', 'road-line', 'car', 'player', 'npc',
  ...CITY.map(b => b.slot)].forEach(loadArt);
 
 // ---------- canvas ----------
@@ -245,12 +245,20 @@ function frame(now) {
     }
   }
 
-  // road: asphalt lanes (his tile when drawn, flat gray until then); his
-  // double-yellow tile straddles the center seam — half in each lane
-  const asp = art['asphalt'];
+  // road: asphalt lanes with the occasional crack variant (deterministic per
+  // tile so it never flickers); his double-yellow decal straddles the row seam
+  const asp = art['asphalt'], crack = art['asphalt-crack'];
   if (asp && asp.ok) {
-    tileStrip('asphalt', ROAD_TOP, camX, camX + viewW, TILE);
-    tileStrip('asphalt', ROAD_TOP + TILE, camX, camX + viewW, TILE);
+    for (let row = 0; row < 2; row++) {
+      const y = ROAD_TOP + row * TILE;
+      for (let tx = Math.floor(camX / STEP); tx <= Math.ceil((camX + viewW) / STEP); tx++) {
+        const x = tx * STEP;
+        if (x < 0 || x >= WORLD_W) continue;
+        const useCrack = crack && crack.ok && ((tx * 7 + row * 13) % 11 === 0);
+        const a = useCrack ? crack : asp;
+        ctx.drawImage(a.bmp || a.img, x, y, TILE, TILE);
+      }
+    }
   } else {
     ctx.fillStyle = '#696969';
     ctx.fillRect(camX, ROAD_TOP, viewW, ROAD_H);
