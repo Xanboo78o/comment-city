@@ -11,7 +11,6 @@ Anything untextured renders as THE TILE, labeled in-game with the file it's wait
 |---|---|
 | player.svg | 1x1.5 tiles |
 | npc.svg | 1x1.5 tiles |
-| skyline.svg | 20x5 tiles (parallax background) |
 | apartment-facade.svg | 5x4 |
 | burger-facade.svg | 6x3 |
 | store-facade.svg | 5x3 |
@@ -19,7 +18,7 @@ Anything untextured renders as THE TILE, labeled in-game with the file it's wait
 | filler-1.svg | 4x4 |
 | filler-2.svg | 6x5 |
 | construction.svg | 6x4 (the COMING SOON slot every winning comment moves into) |
-| road.svg | 1x1 tile (road surface) |
+| road.svg | 1x1 tile — road is 2 rows on an EXACT 64 grid; the yellow center/merge line is half-tile art meeting at the row seam |
 | car.svg | 2x1 (traffic; drawn facing right, flipped in code) |
 | streetlight.svg | 1x3 |
 | bench.svg | 2x1 |
@@ -27,3 +26,5 @@ Anything untextured renders as THE TILE, labeled in-game with the file it's wait
 | atm.svg | 1x2 |
 
 Done: the-tile.svg, dirt.svg, grass.svg
+
+No horizon — Stardew-style ground plane. dirt.svg is reserved for paths/yards/construction ground.

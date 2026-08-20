@@ -10,12 +10,12 @@ const BLEED = 10;              // how far each tile overlaps the previous one
 const STEP = TILE - BLEED;     // grid spacing: tiles drawn at natural 64, stepped 54, never stretched
 const VIEW_H = TILE * 11;      // 704 world-px of world visible vertically
 
-// screen rows of the street (top to bottom)
+// screen rows of the street (top to bottom). No horizon — Stardew-style ground
+// plane: grass everywhere, buildings stand on it, road along the front.
 const BAND_TOP = 416;                    // back edge of walkable band; buildings sit on this line
 const BAND_DEPTH = 160;                  // z axis: 0 = back (at the doors), BAND_DEPTH = curb
 const ROAD_TOP = BAND_TOP + BAND_DEPTH;  // 576
-const ROAD_H = 96;
-const DIRT_EDGE_Y = ROAD_TOP + ROAD_H;   // 672: front cross-section of the ground
+const ROAD_H = TILE * 2;                 // road is exactly 2 tiles: center line sits on the row seam
 
 // ---------- hand-authored city layout (edit by hand, never generate) ----------
 // x/w/h in tiles. Buildings sit on the band's back edge.
@@ -37,19 +37,25 @@ const CITY = [
   { slot: 'streetlight',      x: 59, w: 1, h: 3 },
 ];
 
-const SLOT_SIZES = { 'skyline': [20, 5] };
-
 // ---------- asset loader ----------
-const art = {};   // slot -> { img, ok }
+const art = {};   // slot -> { img, bmp, ok }
 function loadArt(slot) {
   if (art[slot]) return art[slot];
   const entry = { img: new Image(), ok: false };
-  entry.img.onload = () => { entry.ok = true; };
+  entry.img.onload = () => {
+    // pre-raster at natural size for the heavy tiled draws (full-screen grass)
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(entry.img.naturalWidth));
+    cv.height = Math.max(1, Math.round(entry.img.naturalHeight));
+    cv.getContext('2d').drawImage(entry.img, 0, 0, cv.width, cv.height);
+    entry.bmp = cv;
+    entry.ok = true;
+  };
   entry.img.src = 'art/' + slot + '.svg';
   art[slot] = entry;
   return entry;
 }
-['the-tile', 'dirt', 'grass', 'road', 'car', 'player', 'npc', 'skyline',
+['the-tile', 'dirt', 'grass', 'road', 'car', 'player', 'npc',
  ...CITY.map(b => b.slot)].forEach(loadArt);
 
 // ---------- canvas ----------
@@ -93,14 +99,16 @@ function drawSlot(slot, x, y, w, h, flip) {
   ctx.fillText(size, x + 7, y + 19);
 }
 
-// tile one slot across a horizontal strip (natural size, overlapping step)
-function tileStrip(slot, y, fromX, toX) {
-  const startTx = Math.floor(fromX / STEP), endTx = Math.ceil(toX / STEP);
+// tile one slot across a horizontal strip.
+// step: STEP overlaps borders into one line (grass/dirt); TILE = exact grid so
+// painted road lines and dashes stay true to the tile art.
+function tileStrip(slot, y, fromX, toX, step = STEP) {
+  const startTx = Math.floor(fromX / step), endTx = Math.ceil(toX / step);
   for (let tx = startTx; tx <= endTx; tx++) {
-    const x = tx * STEP;
+    const x = tx * step;
     if (x < 0 || x >= WORLD_W) continue;
     const a = art[slot];
-    if (a && a.ok) ctx.drawImage(a.img, x, y, TILE, TILE);
+    if (a && a.ok) ctx.drawImage(a.bmp || a.img, x, y, TILE, TILE);
     else drawSlot(slot, x, y, TILE, TILE);
   }
 }
@@ -119,8 +127,8 @@ const npcs = [
 
 // ---------- traffic ----------
 const LANES = [
-  { y: ROAD_TOP + 44, dir: -1, speed: 260 },  // far lane, leftward
-  { y: ROAD_TOP + 92, dir: 1,  speed: 300 }, // near lane, rightward
+  { y: ROAD_TOP + 58, dir: -1, speed: 260 },   // far lane (top row), leftward
+  { y: ROAD_TOP + 124, dir: 1, speed: 300 },   // near lane (bottom row), rightward
 ];
 const CAR_W = TILE * 2, CAR_H = TILE;
 const cars = [];
@@ -204,25 +212,13 @@ function frame(now) {
 
   // draw
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  const sky = ctx.createLinearGradient(0, 0, 0, BAND_TOP);
-  sky.addColorStop(0, '#7ec8ff');
-  sky.addColorStop(1, '#cfeaff');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, viewW, VIEW_H);
-
-  // parallax skyline (slot; invisible until drawn)
-  ctx.save();
-  ctx.translate(-camX * 0.3, 0);
-  const skW = SLOT_SIZES['skyline'][0] * TILE, skH = SLOT_SIZES['skyline'][1] * TILE;
-  const skA = art['skyline'];
-  if (skA && skA.ok)
-    for (let sx = 0; sx < WORLD_W; sx += skW) ctx.drawImage(skA.img, sx, BAND_TOP - skH, skW, skH);
-  ctx.restore();
-
   ctx.save();
   ctx.translate(-camX, 0);
 
-  // buildings on the back edge
+  // no horizon: grass ground plane fills everything behind the road
+  for (let y = 0; y < ROAD_TOP; y += STEP) tileStrip('grass', y, camX, camX + viewW);
+
+  // buildings standing on the ground plane
   for (const b of CITY) {
     const bx = b.x * TILE, bw = b.w * TILE, bh = b.h * TILE;
     drawSlot(b.slot, bx, BAND_TOP - bh, bw, bh);
@@ -237,14 +233,11 @@ function frame(now) {
     }
   }
 
-  // walkable band: grass rows front to back
-  for (let y = BAND_TOP; y < ROAD_TOP; y += STEP) tileStrip('grass', y, camX, camX + viewW);
-
-  // road along the front edge (falls back to tiled THE TILE, label every so often)
+  // road: exactly 2 tile rows on the true 64 grid, center line on the seam
   const road = art['road'];
   const roadSlot = (road && road.ok) ? 'road' : 'the-tile';
-  tileStrip(roadSlot, ROAD_TOP, camX, camX + viewW);
-  tileStrip(roadSlot, ROAD_TOP + STEP, camX, camX + viewW);
+  tileStrip(roadSlot, ROAD_TOP, camX, camX + viewW, TILE);
+  tileStrip(roadSlot, ROAD_TOP + TILE, camX, camX + viewW, TILE);
   if (roadSlot === 'the-tile') {
     ctx.font = 'bold 11px monospace';
     ctx.textBaseline = 'top';
@@ -270,9 +263,6 @@ function frame(now) {
     const lane = LANES[c.lane];
     drawSlot('car', c.x, lane.y - CAR_H, CAR_W, CAR_H, lane.dir < 0);
   }
-
-  // front cross-section of the ground
-  tileStrip('dirt', DIRT_EDGE_Y, camX, camX + viewW);
 
   if (bubbleTimer > 0) bubble(BUBBLE_TEXT, player.x + player.w / 2, BAND_TOP + player.z - player.h);
 
