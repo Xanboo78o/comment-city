@@ -71,16 +71,10 @@ function drawSlot(slot, x, y, w, h, flip) {
     ctx.restore();
     return;
   }
+  // untextured = ONE big THE TILE stretched over the whole footprint (single outline, giant X)
   const t = art['the-tile'];
-  for (let ty = 0; ty < h; ty += TILE) {
-    for (let tx = 0; tx < w; tx += TILE) {
-      // placeholder grid: plain 64 step (+1px bleed against sky gaps), no overlap
-      const tw = Math.min(TILE, w - tx) + (tx + TILE < w ? 1 : 0);
-      const th = Math.min(TILE, h - ty) + (ty + TILE < h ? 1 : 0);
-      if (t && t.ok) ctx.drawImage(t.img, x + tx, y + ty, tw, th);
-      else { ctx.fillStyle = '#f0f'; ctx.fillRect(x + tx, y + ty, tw, th); }
-    }
-  }
+  if (t && t.ok) ctx.drawImage(t.img, x, y, w, h);
+  else { ctx.fillStyle = '#f0f'; ctx.fillRect(x, y, w, h); }
   ctx.font = 'bold 11px monospace';
   ctx.textBaseline = 'top';
   const name = slot + '.svg';
