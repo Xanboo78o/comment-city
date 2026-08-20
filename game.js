@@ -38,16 +38,28 @@ const CITY = [
 ];
 
 // ---------- asset loader ----------
+// Adam draws road line tiles with the line running vertically; the street runs
+// horizontally, so these get rotated 90° when pre-rastered.
+const ROTATED = new Set(['road-center', 'road-dash', 'road-line']);
 const art = {};   // slot -> { img, bmp, ok }
 function loadArt(slot) {
   if (art[slot]) return art[slot];
   const entry = { img: new Image(), ok: false };
   entry.img.onload = () => {
     // pre-raster at natural size for the heavy tiled draws (full-screen grass)
+    const w = Math.max(1, Math.round(entry.img.naturalWidth));
+    const h = Math.max(1, Math.round(entry.img.naturalHeight));
     const cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.round(entry.img.naturalWidth));
-    cv.height = Math.max(1, Math.round(entry.img.naturalHeight));
-    cv.getContext('2d').drawImage(entry.img, 0, 0, cv.width, cv.height);
+    const c = cv.getContext('2d');
+    if (ROTATED.has(slot)) {
+      cv.width = h; cv.height = w;
+      c.translate(h, 0); c.rotate(Math.PI / 2);
+      // line decals lie on top of asphalt: crop off the tile's outer border
+      c.drawImage(entry.img, -6, -6, w + 12, h + 12);
+    } else {
+      cv.width = w; cv.height = h;
+      c.drawImage(entry.img, 0, 0, w, h);
+    }
     entry.bmp = cv;
     entry.ok = true;
   };
@@ -55,7 +67,7 @@ function loadArt(slot) {
   art[slot] = entry;
   return entry;
 }
-['the-tile', 'dirt', 'grass', 'road', 'car', 'player', 'npc',
+['the-tile', 'dirt', 'grass', 'asphalt', 'road-center', 'road-dash', 'road-line', 'car', 'player', 'npc',
  ...CITY.map(b => b.slot)].forEach(loadArt);
 
 // ---------- canvas ----------
@@ -233,21 +245,18 @@ function frame(now) {
     }
   }
 
-  // road: exactly 2 tile rows on the true 64 grid, center line on the seam
-  const road = art['road'];
-  const roadSlot = (road && road.ok) ? 'road' : 'the-tile';
-  tileStrip(roadSlot, ROAD_TOP, camX, camX + viewW, TILE);
-  tileStrip(roadSlot, ROAD_TOP + TILE, camX, camX + viewW, TILE);
-  if (roadSlot === 'the-tile') {
-    ctx.font = 'bold 11px monospace';
-    ctx.textBaseline = 'top';
-    for (let lx = 0; lx < WORLD_W; lx += 1024) {
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(lx + 3, ROAD_TOP + 3, 110, 15);
-      ctx.fillStyle = '#000';
-      ctx.fillText('road.svg 1x1', lx + 7, ROAD_TOP + 6);
-    }
+  // road: asphalt lanes (his tile when drawn, flat gray until then); his
+  // double-yellow tile straddles the center seam — half in each lane
+  const asp = art['asphalt'];
+  if (asp && asp.ok) {
+    tileStrip('asphalt', ROAD_TOP, camX, camX + viewW, TILE);
+    tileStrip('asphalt', ROAD_TOP + TILE, camX, camX + viewW, TILE);
+  } else {
+    ctx.fillStyle = '#696969';
+    ctx.fillRect(camX, ROAD_TOP, viewW, ROAD_H);
   }
+  const rc = art['road-center'];
+  if (rc && rc.ok) tileStrip('road-center', ROAD_TOP + TILE / 2, camX, camX + viewW, TILE);
 
   // people, depth-sorted (further back drawn first)
   const ents = [...npcs.map(n => ({ z: n.z, x: n.x, flip: n.v < 0, slot: 'npc' })),
