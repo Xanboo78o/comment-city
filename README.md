@@ -19,6 +19,8 @@ Anything untextured renders as THE TILE, labeled in-game with the file it's wait
 | filler-1.svg | 4x4 |
 | filler-2.svg | 6x5 |
 | construction.svg | 6x4 (the COMING SOON slot every winning comment moves into) |
+| road.svg | 1x1 tile (road surface) |
+| car.svg | 2x1 (traffic; drawn facing right, flipped in code) |
 | streetlight.svg | 1x3 |
 | bench.svg | 2x1 |
 | trashcan.svg | 1x1 |

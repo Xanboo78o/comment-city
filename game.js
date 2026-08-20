@@ -1,17 +1,26 @@
 // COMMENT CITY (working title) — the game the comments build.
 // RULE: anything without art renders as THE TILE, labeled with the file it's waiting for.
 // Adam's pipeline: export SVG at 64-scale -> drop in art/ with the right name -> refresh.
+//
+// 2.5D street-band layout (beat-em-up style): buildings at the back, walkable
+// sidewalk band with a depth axis, road with traffic along the front edge.
 
 const TILE = 64;
 const BLEED = 10;              // how far each tile overlaps the previous one
 const STEP = TILE - BLEED;     // grid spacing: tiles drawn at natural 64, stepped 54, never stretched
-const VIEW_H = TILE * 11;            // 11 tiles of world visible vertically
-const GROUND_TILE_Y = 8;             // ground surface = bottom of tile row 8
-const GROUND_Y = GROUND_TILE_Y * TILE;
+const VIEW_H = TILE * 11;      // 704 world-px of world visible vertically
+
+// screen rows of the street (top to bottom)
+const BAND_TOP = 416;                    // back edge of walkable band; buildings sit on this line
+const BAND_DEPTH = 160;                  // z axis: 0 = back (at the doors), BAND_DEPTH = curb
+const ROAD_TOP = BAND_TOP + BAND_DEPTH;  // 576
+const ROAD_H = 96;
+const DIRT_EDGE_Y = ROAD_TOP + ROAD_H;   // 672: front cross-section of the ground
 
 // ---------- hand-authored city layout (edit by hand, never generate) ----------
-// x/w/h in tiles. Buildings sit on the ground line.
+// x/w/h in tiles. Buildings sit on the band's back edge.
 const WORLD_W_TILES = 64;
+const WORLD_W = WORLD_W_TILES * TILE;
 const CITY = [
   { slot: 'apartment-facade', x: 3,  w: 5, h: 4, label: "JIM'S APARTMENT" },
   { slot: 'streetlight',      x: 9,  w: 1, h: 3 },
@@ -28,11 +37,7 @@ const CITY = [
   { slot: 'streetlight',      x: 59, w: 1, h: 3 },
 ];
 
-// ---------- asset slots: filename (art/<slot>.svg) + expected size ----------
-const SLOT_SIZES = {
-  'player': [1, 1.5], 'npc': [1, 1.5], 'cop': [1, 1.5], 'shopkeeper': [1, 1.5],
-  'skyline': [20, 5],
-};
+const SLOT_SIZES = { 'skyline': [20, 5] };
 
 // ---------- asset loader ----------
 const art = {};   // slot -> { img, ok }
@@ -44,7 +49,7 @@ function loadArt(slot) {
   art[slot] = entry;
   return entry;
 }
-['the-tile', 'dirt', 'grass', 'player', 'npc', 'skyline',
+['the-tile', 'dirt', 'grass', 'road', 'car', 'player', 'npc', 'skyline',
  ...CITY.map(b => b.slot)].forEach(loadArt);
 
 // ---------- canvas ----------
@@ -61,7 +66,8 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// draw a slot at world coords; missing art -> THE TILE grid + filename label
+// draw a slot at world coords; missing art -> ONE big THE TILE over the whole
+// footprint (single outline, giant X) + a chip naming the file it waits for
 function drawSlot(slot, x, y, w, h, flip) {
   const a = loadArt(slot);
   if (a.ok) {
@@ -71,7 +77,6 @@ function drawSlot(slot, x, y, w, h, flip) {
     ctx.restore();
     return;
   }
-  // untextured = ONE big THE TILE stretched over the whole footprint (single outline, giant X)
   const t = art['the-tile'];
   if (t && t.ok) ctx.drawImage(t.img, x, y, w, h);
   else { ctx.fillStyle = '#f0f'; ctx.fillRect(x, y, w, h); }
@@ -93,7 +98,7 @@ function tileStrip(slot, y, fromX, toX) {
   const startTx = Math.floor(fromX / STEP), endTx = Math.ceil(toX / STEP);
   for (let tx = startTx; tx <= endTx; tx++) {
     const x = tx * STEP;
-    if (x < 0 || x >= WORLD_W_TILES * TILE) continue;
+    if (x < 0 || x >= WORLD_W) continue;
     const a = art[slot];
     if (a && a.ok) ctx.drawImage(a.img, x, y, TILE, TILE);
     else drawSlot(slot, x, y, TILE, TILE);
@@ -102,24 +107,38 @@ function tileStrip(slot, y, fromX, toX) {
 
 // ---------- player ----------
 const player = {
-  x: 8 * TILE, w: TILE, h: TILE * 1.5,
-  vx: 0, facing: 1, speed: 300,
+  x: 8 * TILE, z: 80, w: TILE, h: TILE * 1.5,
+  facing: 1, speedX: 300, speedZ: 220,
 };
 
-// ---------- NPCs pacing the street ----------
+// ---------- NPCs pacing the street at fixed depths ----------
 const npcs = [
-  { x: 14 * TILE, min: 11 * TILE, max: 18 * TILE, v: 60 },
-  { x: 30 * TILE, min: 27 * TILE, max: 34 * TILE, v: -60 },
+  { x: 14 * TILE, z: 40,  min: 11 * TILE, max: 18 * TILE, v: 60 },
+  { x: 30 * TILE, z: 120, min: 27 * TILE, max: 34 * TILE, v: -60 },
 ];
 
-// ---------- input: keyboard + touch halves ----------
+// ---------- traffic ----------
+const LANES = [
+  { y: ROAD_TOP + 44, dir: -1, speed: 260 },  // far lane, leftward
+  { y: ROAD_TOP + 92, dir: 1,  speed: 300 }, // near lane, rightward
+];
+const CAR_W = TILE * 2, CAR_H = TILE;
+const cars = [];
+for (let l = 0; l < LANES.length; l++)
+  for (let i = 0; i < 3; i++)
+    cars.push({ lane: l, x: i * 1400 + l * 500 });
+
+// ---------- input: keyboard + drag joystick ----------
 const keys = {};
 addEventListener('keydown', e => keys[e.code] = true);
 addEventListener('keyup', e => keys[e.code] = false);
-let touchDir = 0;
-canvas.addEventListener('pointerdown', e => { touchDir = (e.clientX < innerWidth / 2) ? -1 : 1; });
-canvas.addEventListener('pointerup', () => touchDir = 0);
-canvas.addEventListener('pointercancel', () => touchDir = 0);
+let joy = null;
+canvas.addEventListener('pointerdown', e => { joy = { id: e.pointerId, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 }; });
+canvas.addEventListener('pointermove', e => {
+  if (joy && e.pointerId === joy.id) { joy.dx = e.clientX - joy.sx; joy.dy = e.clientY - joy.sy; }
+});
+canvas.addEventListener('pointerup', () => joy = null);
+canvas.addEventListener('pointercancel', () => joy = null);
 
 // ---------- spawn speech bubble ----------
 let bubbleTimer = 6;
@@ -150,15 +169,21 @@ function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
 
-  // update
-  let dir = 0;
-  if (keys['ArrowLeft'] || keys['KeyA']) dir -= 1;
-  if (keys['ArrowRight'] || keys['KeyD']) dir += 1;
-  dir = dir || touchDir;
-  player.vx = dir * player.speed;
-  if (dir) player.facing = dir;
-  player.x += player.vx * dt;
-  player.x = Math.max(0, Math.min(WORLD_W_TILES * TILE - player.w, player.x));
+  // input -> movement (x along street, z into its depth)
+  let dx = 0, dz = 0;
+  if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+  if (keys['ArrowUp'] || keys['KeyW']) dz -= 1;
+  if (keys['ArrowDown'] || keys['KeyS']) dz += 1;
+  if (!dx && !dz && joy) {
+    const len = Math.hypot(joy.dx, joy.dy);
+    if (len > 12) { dx = joy.dx / len; dz = joy.dy / len; }
+  }
+  player.x += dx * player.speedX * dt;
+  player.z += dz * player.speedZ * dt;
+  if (dx) player.facing = Math.sign(dx);
+  player.x = Math.max(0, Math.min(WORLD_W - player.w, player.x));
+  player.z = Math.max(0, Math.min(BAND_DEPTH, player.z));
   if (bubbleTimer > 0) bubbleTimer -= dt;
 
   for (const n of npcs) {
@@ -167,56 +192,89 @@ function frame(now) {
     if (n.x > n.max) { n.x = n.max; n.v *= -1; }
   }
 
+  for (const c of cars) {
+    const lane = LANES[c.lane];
+    c.x += lane.dir * lane.speed * dt;
+    if (lane.dir > 0 && c.x > WORLD_W + 200) c.x = -CAR_W - 200;
+    if (lane.dir < 0 && c.x < -CAR_W - 200) c.x = WORLD_W + 200;
+  }
+
   // camera
-  const camX = Math.max(0, Math.min(WORLD_W_TILES * TILE - viewW, player.x + player.w / 2 - viewW / 2));
+  const camX = Math.max(0, Math.min(WORLD_W - viewW, player.x + player.w / 2 - viewW / 2));
 
   // draw
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  const sky = ctx.createLinearGradient(0, 0, 0, BAND_TOP);
   sky.addColorStop(0, '#7ec8ff');
   sky.addColorStop(1, '#cfeaff');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, viewW, VIEW_H);
 
-  // parallax skyline (slot; THE TILE until drawn)
+  // parallax skyline (slot; invisible until drawn)
   ctx.save();
   ctx.translate(-camX * 0.3, 0);
   const skW = SLOT_SIZES['skyline'][0] * TILE, skH = SLOT_SIZES['skyline'][1] * TILE;
-  for (let sx = 0; sx < WORLD_W_TILES * TILE; sx += skW) {
-    const a = art['skyline'];
-    if (a && a.ok) ctx.drawImage(a.img, sx, GROUND_Y - skH, skW, skH);
-  }
+  const skA = art['skyline'];
+  if (skA && skA.ok)
+    for (let sx = 0; sx < WORLD_W; sx += skW) ctx.drawImage(skA.img, sx, BAND_TOP - skH, skW, skH);
   ctx.restore();
 
   ctx.save();
   ctx.translate(-camX, 0);
 
-  // ground: grass surface row, dirt below
-  tileStrip('grass', GROUND_Y, camX, camX + viewW);
-  for (let row = 1; row <= 3; row++) tileStrip('dirt', GROUND_Y + row * STEP, camX, camX + viewW);
-
-  // buildings + props (sit on ground line)
+  // buildings on the back edge
   for (const b of CITY) {
     const bx = b.x * TILE, bw = b.w * TILE, bh = b.h * TILE;
-    drawSlot(b.slot, bx, GROUND_Y - bh, bw, bh);
+    drawSlot(b.slot, bx, BAND_TOP - bh, bw, bh);
     if (b.label) {
       ctx.font = 'bold 12px monospace';
       ctx.textBaseline = 'bottom';
       const lw = ctx.measureText(b.label).width;
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillRect(bx + bw / 2 - lw / 2 - 4, GROUND_Y - bh - 20, lw + 8, 16);
+      ctx.fillRect(bx + bw / 2 - lw / 2 - 4, BAND_TOP - bh - 20, lw + 8, 16);
       ctx.fillStyle = '#000';
-      ctx.fillText(b.label, bx + bw / 2 - lw / 2, GROUND_Y - bh - 6);
+      ctx.fillText(b.label, bx + bw / 2 - lw / 2, BAND_TOP - bh - 6);
     }
   }
 
-  // NPCs
-  for (const n of npcs) drawSlot('npc', n.x, GROUND_Y - TILE * 1.5, TILE, TILE * 1.5, n.v < 0);
+  // walkable band: grass rows front to back
+  for (let y = BAND_TOP; y < ROAD_TOP; y += STEP) tileStrip('grass', y, camX, camX + viewW);
 
-  // player
-  drawSlot('player', player.x, GROUND_Y - player.h, player.w, player.h, player.facing < 0);
+  // road along the front edge (falls back to tiled THE TILE, label every so often)
+  const road = art['road'];
+  const roadSlot = (road && road.ok) ? 'road' : 'the-tile';
+  tileStrip(roadSlot, ROAD_TOP, camX, camX + viewW);
+  tileStrip(roadSlot, ROAD_TOP + STEP, camX, camX + viewW);
+  if (roadSlot === 'the-tile') {
+    ctx.font = 'bold 11px monospace';
+    ctx.textBaseline = 'top';
+    for (let lx = 0; lx < WORLD_W; lx += 1024) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(lx + 3, ROAD_TOP + 3, 110, 15);
+      ctx.fillStyle = '#000';
+      ctx.fillText('road.svg 1x1', lx + 7, ROAD_TOP + 6);
+    }
+  }
 
-  if (bubbleTimer > 0) bubble(BUBBLE_TEXT, player.x + player.w / 2, GROUND_Y - player.h);
+  // people, depth-sorted (further back drawn first)
+  const ents = [...npcs.map(n => ({ z: n.z, x: n.x, flip: n.v < 0, slot: 'npc' })),
+                { z: player.z, x: player.x, flip: player.facing < 0, slot: 'player' }];
+  ents.sort((a, b) => a.z - b.z);
+  for (const e of ents) {
+    const feet = BAND_TOP + e.z;
+    drawSlot(e.slot, e.x, feet - TILE * 1.5, TILE, TILE * 1.5, e.flip);
+  }
+
+  // traffic (far lane first, then near lane in front)
+  for (const c of cars) {
+    const lane = LANES[c.lane];
+    drawSlot('car', c.x, lane.y - CAR_H, CAR_W, CAR_H, lane.dir < 0);
+  }
+
+  // front cross-section of the ground
+  tileStrip('dirt', DIRT_EDGE_Y, camX, camX + viewW);
+
+  if (bubbleTimer > 0) bubble(BUBBLE_TEXT, player.x + player.w / 2, BAND_TOP + player.z - player.h);
 
   ctx.restore();
   requestAnimationFrame(frame);
