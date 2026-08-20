@@ -81,7 +81,8 @@ function loadArt(slot) {
   art[slot] = entry;
   return entry;
 }
-['the-tile', 'dirt', 'grass', 'asphalt', 'asphalt-crack', 'road-center', 'road-dash', 'road-line', 'car', 'player', 'npc',
+['the-tile', 'dirt', 'grass', 'asphalt', 'asphalt-crack', 'road-center', 'road-dash', 'road-line', 'car',
+ 'player', 'player1', 'player2', 'npc',
  ...CITY.map(b => b.slot)].forEach(loadArt);
 
 // ---------- canvas ----------
@@ -141,7 +142,7 @@ function tileStrip(slot, y, fromX, toX) {
 // ---------- player ----------
 const player = {
   x: 8 * TILE, z: 80, w: 43, h: TILE * 1.5,   // his art's proportions (40x89), don't fatten
-  facing: 1, speedX: 300, speedZ: 220,
+  facing: 1, speedX: 300, speedZ: 220, animT: 0,
 };
 
 // ---------- NPCs pacing the street at fixed depths ----------
@@ -228,6 +229,7 @@ function frame(now) {
   }
   player.x += dx * player.speedX * dt;
   player.z += dz * player.speedZ * dt;
+  if (dx || dz) player.animT += dt; else player.animT = 0;
   if (dx) player.facing = Math.sign(dx);
   player.x = Math.max(0, Math.min(WORLD_W - player.w, player.x));
   player.z = Math.max(0, Math.min(BAND_DEPTH, player.z));
@@ -291,8 +293,11 @@ function frame(now) {
   }
 
   // people, depth-sorted (further back drawn first)
+  // player2 = standing; walking alternates the two stride poses
+  const playerSlot = player.animT === 0 ? 'player2'
+    : (Math.floor(player.animT / 0.14) % 2 ? 'player1' : 'player');
   const ents = [...npcs.map(n => ({ z: n.z, x: n.x, w: TILE, flip: n.v < 0, slot: 'npc' })),
-                { z: player.z, x: player.x, w: player.w, flip: player.facing < 0, slot: 'player' }];
+                { z: player.z, x: player.x, w: player.w, flip: player.facing < 0, slot: playerSlot }];
   ents.sort((a, b) => a.z - b.z);
   for (const e of ents) {
     const feet = BAND_TOP + e.z;
