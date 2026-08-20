@@ -155,7 +155,7 @@ const LANES = [
   { y: ROAD_TOP + TILE * 2 - 8, dir: -1, speed: 260 },  // far lane row, leftward
   { y: ROAD_TOP + TILE * 4 - 8, dir: 1, speed: 300 },   // near lane row, rightward
 ];
-const CAR_W = TILE * 2, CAR_H = TILE;
+const CAR_W = 124, CAR_H = 74;   // his car art's natural proportions, don't squash
 const cars = [];
 for (let l = 0; l < LANES.length; l++)
   for (let i = 0; i < 3; i++)
