@@ -6,14 +6,18 @@
 // sidewalk band with a depth axis, road with traffic along the front edge.
 
 const TILE = 64;
-const VIEW_H = TILE * 11;      // 704 world-px of world visible vertically
+const VIEW_H = TILE * 13;      // 832 world-px of world visible vertically
 
 // screen rows of the street (top to bottom). No horizon — Stardew-style ground
 // plane: grass everywhere, buildings stand on it, road along the front.
-const BAND_TOP = 416;                    // back edge of walkable band; buildings sit on this line
+// A road slice top->bottom is FIVE whole tiles (Adam's spec):
+//   road-line / lane / road-center / lane / road-line
+// (line tiles rotated 90° for east-west roads; unrotated for north-south)
+const BAND_TOP = 352;                    // back edge of walkable band; buildings sit on this line
 const BAND_DEPTH = 160;                  // z axis: 0 = back (at the doors), BAND_DEPTH = curb
-const ROAD_TOP = BAND_TOP + BAND_DEPTH;  // 576
-const ROAD_H = TILE * 2;                 // road is exactly 2 tiles: center line sits on the row seam
+const ROAD_TOP = BAND_TOP + BAND_DEPTH;  // 512
+const ROAD_ROWS = ['road-line', 'lane', 'road-center', 'lane', 'road-line'];
+const ROAD_H = TILE * ROAD_ROWS.length;  // 320
 
 // ---------- hand-authored city layout (edit by hand, never generate) ----------
 // x/w/h in tiles. Buildings sit on the band's back edge.
@@ -50,21 +54,22 @@ function loadArt(slot) {
     const h = Math.max(1, Math.round(entry.img.naturalHeight));
     const cv = document.createElement('canvas');
     const c = cv.getContext('2d');
-    if (ROTATED.has(slot)) {
-      // line decals: rotate 90°, crop the tile border, keep only the center
-      // band so the decal lies thin on top of the asphalt
-      const temp = document.createElement('canvas');
-      temp.width = TILE; temp.height = TILE;
-      const tc = temp.getContext('2d');
-      tc.translate(TILE, 0); tc.rotate(Math.PI / 2);
-      tc.drawImage(entry.img, -6, -6, w + 12, h + 12);
-      cv.width = TILE; cv.height = 32;
-      c.drawImage(temp, 0, 16, TILE, 32, 0, 0, TILE, 32);
-    } else if (GROUND.has(slot)) {
-      // ground tiles butt on the exact 64 grid; keep each tile's top/left
-      // border and crop its right/bottom one so seams show ONE outline
+    if (ROTATED.has(slot) || GROUND.has(slot)) {
+      // ground/road tiles butt on the exact 64 grid; keep each tile's top/left
+      // border and crop its right/bottom one so seams show ONE outline.
+      // Road line tiles are drawn with the line vertical -> rotate 90° first
+      // (east-west roads; north-south will use them unrotated).
+      let src = entry.img, sw = w, sh = h;
+      if (ROTATED.has(slot)) {
+        const temp = document.createElement('canvas');
+        temp.width = TILE; temp.height = TILE;
+        const tc = temp.getContext('2d');
+        tc.translate(TILE, 0); tc.rotate(Math.PI / 2);
+        tc.drawImage(entry.img, 0, 0, TILE, TILE);
+        src = temp; sw = TILE; sh = TILE;
+      }
       cv.width = TILE; cv.height = TILE;
-      c.drawImage(entry.img, 0, 0, TILE + 6, TILE + 6);
+      c.drawImage(src, 0, 0, sw / TILE * (TILE + 6), sh / TILE * (TILE + 6));
     } else {
       cv.width = w; cv.height = h;
       c.drawImage(entry.img, 0, 0, w, h);
@@ -132,16 +137,6 @@ function tileStrip(slot, y, fromX, toX) {
   }
 }
 
-// thin line decal (baked 64x32 band) tiled across the road
-function drawBand(slot, y, fromX, toX) {
-  const a = art[slot];
-  if (!a || !a.ok) return;
-  for (let tx = Math.floor(fromX / TILE); tx <= Math.ceil(toX / TILE); tx++) {
-    const x = tx * TILE;
-    if (x < 0 || x >= WORLD_W) continue;
-    ctx.drawImage(a.bmp, x, y, TILE, 32);
-  }
-}
 
 // ---------- player ----------
 const player = {
@@ -157,8 +152,8 @@ const npcs = [
 
 // ---------- traffic ----------
 const LANES = [
-  { y: ROAD_TOP + 58, dir: -1, speed: 260 },   // far lane (top row), leftward
-  { y: ROAD_TOP + 124, dir: 1, speed: 300 },   // near lane (bottom row), rightward
+  { y: ROAD_TOP + TILE * 2 - 8, dir: -1, speed: 260 },  // far lane row, leftward
+  { y: ROAD_TOP + TILE * 4 - 8, dir: 1, speed: 300 },   // near lane row, rightward
 ];
 const CAR_W = TILE * 2, CAR_H = TILE;
 const cars = [];
@@ -263,28 +258,23 @@ function frame(now) {
     }
   }
 
-  // road: asphalt lanes on the exact grid with occasional crack variants
-  // (deterministic per tile so it never flickers)
+  // road: five whole-tile rows per Adam's spec — line / lane / center / lane /
+  // line. Lane rows mix in the crack variant deterministically (never flickers).
   const asp = art['asphalt'], crack = art['asphalt-crack'];
-  if (asp && asp.ok) {
-    for (let row = 0; row < 2; row++) {
-      const y = ROAD_TOP + row * TILE;
-      for (let tx = Math.floor(camX / TILE); tx <= Math.ceil((camX + viewW) / TILE); tx++) {
-        const x = tx * TILE;
-        if (x < 0 || x >= WORLD_W) continue;
+  for (let row = 0; row < ROAD_ROWS.length; row++) {
+    const y = ROAD_TOP + row * TILE;
+    for (let tx = Math.floor(camX / TILE); tx <= Math.ceil((camX + viewW) / TILE); tx++) {
+      const x = tx * TILE;
+      if (x < 0 || x >= WORLD_W) continue;
+      let a;
+      if (ROAD_ROWS[row] === 'lane') {
         const useCrack = crack && crack.ok && ((tx * 7 + row * 13) % 11 === 0);
-        const a = useCrack ? crack : asp;
-        ctx.drawImage(a.bmp || a.img, x, y, TILE, TILE);
-      }
+        a = useCrack ? crack : asp;
+      } else a = art[ROAD_ROWS[row]];
+      if (a && a.ok) ctx.drawImage(a.bmp, x, y, TILE, TILE);
+      else { ctx.fillStyle = '#696969'; ctx.fillRect(x, y, TILE, TILE); }
     }
-  } else {
-    ctx.fillStyle = '#696969';
-    ctx.fillRect(camX, ROAD_TOP, viewW, ROAD_H);
   }
-  // line decals: white edge lines just inside both edges, double yellow on the seam
-  drawBand('road-line', ROAD_TOP, camX, camX + viewW);
-  drawBand('road-center', ROAD_TOP + TILE - 16, camX, camX + viewW);
-  drawBand('road-line', ROAD_TOP + ROAD_H - 32, camX, camX + viewW);
 
   // people, depth-sorted (further back drawn first)
   const ents = [...npcs.map(n => ({ z: n.z, x: n.x, flip: n.v < 0, slot: 'npc' })),
