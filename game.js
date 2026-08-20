@@ -140,7 +140,7 @@ function tileStrip(slot, y, fromX, toX) {
 
 // ---------- player ----------
 const player = {
-  x: 8 * TILE, z: 80, w: TILE, h: TILE * 1.5,
+  x: 8 * TILE, z: 80, w: 43, h: TILE * 1.5,   // his art's proportions (40x89), don't fatten
   facing: 1, speedX: 300, speedZ: 220,
 };
 
@@ -291,12 +291,12 @@ function frame(now) {
   }
 
   // people, depth-sorted (further back drawn first)
-  const ents = [...npcs.map(n => ({ z: n.z, x: n.x, flip: n.v < 0, slot: 'npc' })),
-                { z: player.z, x: player.x, flip: player.facing < 0, slot: 'player' }];
+  const ents = [...npcs.map(n => ({ z: n.z, x: n.x, w: TILE, flip: n.v < 0, slot: 'npc' })),
+                { z: player.z, x: player.x, w: player.w, flip: player.facing < 0, slot: 'player' }];
   ents.sort((a, b) => a.z - b.z);
   for (const e of ents) {
     const feet = BAND_TOP + e.z;
-    drawSlot(e.slot, e.x, feet - TILE * 1.5, TILE, TILE * 1.5, e.flip);
+    drawSlot(e.slot, e.x, feet - TILE * 1.5, e.w, TILE * 1.5, e.flip);
   }
 
   // traffic (far lane first, then near lane in front)
