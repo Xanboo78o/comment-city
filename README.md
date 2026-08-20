@@ -27,6 +27,7 @@ Anything untextured renders as THE TILE, labeled in-game with the file it's wait
 
 Done: the-tile.svg, dirt.svg, grass.svg, road-center.svg (double yellow), road-dash.svg (merge line, unused until multi-lane), road-line.svg (solid white, unused until edge lines)
 
-Road lines are drawn with the line VERTICAL in the tile; the engine rotates them 90°,
-crops their border, and straddles them across the road's center seam (the half-tile plan).
+ROAD SPEC: a slice top->bottom is FIVE whole tiles — road-line / lane / road-center / lane / road-line.
+Line tiles are drawn with the line vertical; the engine rotates them 90° for east-west roads
+(north-south roads will use them unrotated).
 No horizon — Stardew-style ground plane. dirt.svg is reserved for paths/yards/construction ground.
