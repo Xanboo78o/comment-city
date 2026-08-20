@@ -72,8 +72,10 @@ function drawSlot(slot, x, y, w, h, flip) {
   const t = art['the-tile'];
   for (let ty = 0; ty < h; ty += TILE) {
     for (let tx = 0; tx < w; tx += TILE) {
-      const tw = Math.min(TILE, w - tx), th = Math.min(TILE, h - ty);
-      if (t && t.ok) ctx.drawImage(t.img, 0, 0, tw, th, x + tx, y + ty, tw, th);
+      // +1px bleed except at the footprint edge, so seams never show background
+      const tw = Math.min(TILE, w - tx) + (tx + TILE < w ? 1 : 0);
+      const th = Math.min(TILE, h - ty) + (ty + TILE < h ? 1 : 0);
+      if (t && t.ok) ctx.drawImage(t.img, x + tx, y + ty, tw, th);
       else { ctx.fillStyle = '#f0f'; ctx.fillRect(x + tx, y + ty, tw, th); }
     }
   }
@@ -96,7 +98,7 @@ function tileStrip(slot, y, fromX, toX) {
   for (let tx = startTx; tx <= endTx; tx++) {
     if (tx < 0 || tx >= WORLD_W_TILES) continue;
     const a = art[slot];
-    if (a && a.ok) ctx.drawImage(a.img, tx * TILE, y, TILE, TILE);
+    if (a && a.ok) ctx.drawImage(a.img, tx * TILE, y, TILE + 1, TILE + 1);
     else drawSlot(slot, tx * TILE, y, TILE, TILE);
   }
 }
