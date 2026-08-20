@@ -3,7 +3,8 @@
 // Adam's pipeline: export SVG at 64-scale -> drop in art/ with the right name -> refresh.
 
 const TILE = 64;
-const BLEED = 10;   // tiles overlap their right/down neighbors so outlines don't double up
+const BLEED = 10;              // how far each tile overlaps the previous one
+const STEP = TILE - BLEED;     // grid spacing: tiles drawn at natural 64, stepped 54, never stretched
 const VIEW_H = TILE * 11;            // 11 tiles of world visible vertically
 const GROUND_TILE_Y = 8;             // ground surface = bottom of tile row 8
 const GROUND_Y = GROUND_TILE_Y * TILE;
@@ -73,10 +74,9 @@ function drawSlot(slot, x, y, w, h, flip) {
   const t = art['the-tile'];
   for (let ty = 0; ty < h; ty += TILE) {
     for (let tx = 0; tx < w; tx += TILE) {
-      // overlap into the next tile so outlines merge into one line (not doubled);
-      // no bleed past the footprint edge
-      const tw = (tx + TILE < w) ? TILE + BLEED : Math.min(TILE, w - tx);
-      const th = (ty + TILE < h) ? TILE + BLEED : Math.min(TILE, h - ty);
+      // placeholder grid: plain 64 step (+1px bleed against sky gaps), no overlap
+      const tw = Math.min(TILE, w - tx) + (tx + TILE < w ? 1 : 0);
+      const th = Math.min(TILE, h - ty) + (ty + TILE < h ? 1 : 0);
       if (t && t.ok) ctx.drawImage(t.img, x + tx, y + ty, tw, th);
       else { ctx.fillStyle = '#f0f'; ctx.fillRect(x + tx, y + ty, tw, th); }
     }
@@ -94,14 +94,15 @@ function drawSlot(slot, x, y, w, h, flip) {
   ctx.fillText(size, x + 7, y + 19);
 }
 
-// tile one slot across a horizontal strip
+// tile one slot across a horizontal strip (natural size, overlapping step)
 function tileStrip(slot, y, fromX, toX) {
-  const startTx = Math.floor(fromX / TILE), endTx = Math.ceil(toX / TILE);
+  const startTx = Math.floor(fromX / STEP), endTx = Math.ceil(toX / STEP);
   for (let tx = startTx; tx <= endTx; tx++) {
-    if (tx < 0 || tx >= WORLD_W_TILES) continue;
+    const x = tx * STEP;
+    if (x < 0 || x >= WORLD_W_TILES * TILE) continue;
     const a = art[slot];
-    if (a && a.ok) ctx.drawImage(a.img, tx * TILE, y, TILE + BLEED, TILE + BLEED);
-    else drawSlot(slot, tx * TILE, y, TILE, TILE);
+    if (a && a.ok) ctx.drawImage(a.img, x, y, TILE, TILE);
+    else drawSlot(slot, x, y, TILE, TILE);
   }
 }
 
@@ -198,7 +199,7 @@ function frame(now) {
 
   // ground: grass surface row, dirt below
   tileStrip('grass', GROUND_Y, camX, camX + viewW);
-  for (let row = 1; row <= 2; row++) tileStrip('dirt', GROUND_Y + row * TILE, camX, camX + viewW);
+  for (let row = 1; row <= 3; row++) tileStrip('dirt', GROUND_Y + row * STEP, camX, camX + viewW);
 
   // buildings + props (sit on ground line)
   for (const b of CITY) {
