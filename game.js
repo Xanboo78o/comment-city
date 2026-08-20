@@ -13,8 +13,8 @@ const VIEW_H = TILE * 13;      // 832 world-px of world visible vertically
 // A road slice top->bottom is FIVE whole tiles (Adam's spec):
 //   road-line / lane / road-center / lane / road-line
 // (line tiles rotated 90° for east-west roads; unrotated for north-south)
-const BAND_TOP = 352;                    // back edge of walkable band; buildings sit on this line
-const BAND_DEPTH = 160;                  // z axis: 0 = back (at the doors), BAND_DEPTH = curb
+const BAND_TOP = TILE * 6;               // 384: back edge of walkable band — a grid line, so facades align
+const BAND_DEPTH = TILE * 2;             // z axis: 0 = back (at the doors), BAND_DEPTH = curb
 const ROAD_TOP = BAND_TOP + BAND_DEPTH;  // 512
 const ROAD_ROWS = ['road-line', 'lane', 'road-center', 'lane', 'road-line'];
 const ROAD_H = TILE * ROAD_ROWS.length;  // 320
