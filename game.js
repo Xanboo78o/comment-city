@@ -288,7 +288,7 @@ function frame(now) {
   // traffic (far lane first, then near lane in front)
   for (const c of cars) {
     const lane = LANES[c.lane];
-    drawSlot('car', c.x, lane.y - CAR_H, CAR_W, CAR_H, lane.dir < 0);
+    drawSlot('car', c.x, lane.y - CAR_H, CAR_W, CAR_H, lane.dir > 0);
   }
 
   if (bubbleTimer > 0) bubble(BUBBLE_TEXT, player.x + player.w / 2, BAND_TOP + player.z - player.h);
