@@ -6,8 +6,6 @@
 // sidewalk band with a depth axis, road with traffic along the front edge.
 
 const TILE = 64;
-const BLEED = 10;              // how far each tile overlaps the previous one
-const STEP = TILE - BLEED;     // grid spacing: tiles drawn at natural 64, stepped 54, never stretched
 const VIEW_H = TILE * 11;      // 704 world-px of world visible vertically
 
 // screen rows of the street (top to bottom). No horizon — Stardew-style ground
@@ -41,21 +39,32 @@ const CITY = [
 // Adam draws road line tiles with the line running vertically; the street runs
 // horizontally, so these get rotated 90° when pre-rastered.
 const ROTATED = new Set(['road-center', 'road-dash', 'road-line']);
+const GROUND = new Set(['grass', 'dirt', 'asphalt', 'asphalt-crack']);
 const art = {};   // slot -> { img, bmp, ok }
 function loadArt(slot) {
   if (art[slot]) return art[slot];
   const entry = { img: new Image(), ok: false };
   entry.img.onload = () => {
-    // pre-raster at natural size for the heavy tiled draws (full-screen grass)
+    // pre-raster for the heavy tiled draws (full-screen grass)
     const w = Math.max(1, Math.round(entry.img.naturalWidth));
     const h = Math.max(1, Math.round(entry.img.naturalHeight));
     const cv = document.createElement('canvas');
     const c = cv.getContext('2d');
     if (ROTATED.has(slot)) {
-      cv.width = h; cv.height = w;
-      c.translate(h, 0); c.rotate(Math.PI / 2);
-      // line decals lie on top of asphalt: crop off the tile's outer border
-      c.drawImage(entry.img, -6, -6, w + 12, h + 12);
+      // line decals: rotate 90°, crop the tile border, keep only the center
+      // band so the decal lies thin on top of the asphalt
+      const temp = document.createElement('canvas');
+      temp.width = TILE; temp.height = TILE;
+      const tc = temp.getContext('2d');
+      tc.translate(TILE, 0); tc.rotate(Math.PI / 2);
+      tc.drawImage(entry.img, -6, -6, w + 12, h + 12);
+      cv.width = TILE; cv.height = 32;
+      c.drawImage(temp, 0, 16, TILE, 32, 0, 0, TILE, 32);
+    } else if (GROUND.has(slot)) {
+      // ground tiles butt on the exact 64 grid; keep each tile's top/left
+      // border and crop its right/bottom one so seams show ONE outline
+      cv.width = TILE; cv.height = TILE;
+      c.drawImage(entry.img, 0, 0, TILE + 6, TILE + 6);
     } else {
       cv.width = w; cv.height = h;
       c.drawImage(entry.img, 0, 0, w, h);
@@ -111,17 +120,26 @@ function drawSlot(slot, x, y, w, h, flip) {
   ctx.fillText(size, x + 7, y + 19);
 }
 
-// tile one slot across a horizontal strip.
-// step: STEP overlaps borders into one line (grass/dirt); TILE = exact grid so
-// painted road lines and dashes stay true to the tile art.
-function tileStrip(slot, y, fromX, toX, step = STEP) {
-  const startTx = Math.floor(fromX / step), endTx = Math.ceil(toX / step);
+// tile one slot across a horizontal strip on the exact 64 grid
+function tileStrip(slot, y, fromX, toX) {
+  const startTx = Math.floor(fromX / TILE), endTx = Math.ceil(toX / TILE);
   for (let tx = startTx; tx <= endTx; tx++) {
-    const x = tx * step;
+    const x = tx * TILE;
     if (x < 0 || x >= WORLD_W) continue;
     const a = art[slot];
     if (a && a.ok) ctx.drawImage(a.bmp || a.img, x, y, TILE, TILE);
     else drawSlot(slot, x, y, TILE, TILE);
+  }
+}
+
+// thin line decal (baked 64x32 band) tiled across the road
+function drawBand(slot, y, fromX, toX) {
+  const a = art[slot];
+  if (!a || !a.ok) return;
+  for (let tx = Math.floor(fromX / TILE); tx <= Math.ceil(toX / TILE); tx++) {
+    const x = tx * TILE;
+    if (x < 0 || x >= WORLD_W) continue;
+    ctx.drawImage(a.bmp, x, y, TILE, 32);
   }
 }
 
@@ -228,7 +246,7 @@ function frame(now) {
   ctx.translate(-camX, 0);
 
   // no horizon: grass ground plane fills everything behind the road
-  for (let y = 0; y < ROAD_TOP; y += STEP) tileStrip('grass', y, camX, camX + viewW);
+  for (let y = 0; y < ROAD_TOP; y += TILE) tileStrip('grass', y, camX, camX + viewW);
 
   // buildings standing on the ground plane
   for (const b of CITY) {
@@ -245,14 +263,14 @@ function frame(now) {
     }
   }
 
-  // road: asphalt lanes with the occasional crack variant (deterministic per
-  // tile so it never flickers); his double-yellow decal straddles the row seam
+  // road: asphalt lanes on the exact grid with occasional crack variants
+  // (deterministic per tile so it never flickers)
   const asp = art['asphalt'], crack = art['asphalt-crack'];
   if (asp && asp.ok) {
     for (let row = 0; row < 2; row++) {
       const y = ROAD_TOP + row * TILE;
-      for (let tx = Math.floor(camX / STEP); tx <= Math.ceil((camX + viewW) / STEP); tx++) {
-        const x = tx * STEP;
+      for (let tx = Math.floor(camX / TILE); tx <= Math.ceil((camX + viewW) / TILE); tx++) {
+        const x = tx * TILE;
         if (x < 0 || x >= WORLD_W) continue;
         const useCrack = crack && crack.ok && ((tx * 7 + row * 13) % 11 === 0);
         const a = useCrack ? crack : asp;
@@ -263,8 +281,10 @@ function frame(now) {
     ctx.fillStyle = '#696969';
     ctx.fillRect(camX, ROAD_TOP, viewW, ROAD_H);
   }
-  const rc = art['road-center'];
-  if (rc && rc.ok) tileStrip('road-center', ROAD_TOP + TILE / 2, camX, camX + viewW, TILE);
+  // line decals: white edge lines just inside both edges, double yellow on the seam
+  drawBand('road-line', ROAD_TOP, camX, camX + viewW);
+  drawBand('road-center', ROAD_TOP + TILE - 16, camX, camX + viewW);
+  drawBand('road-line', ROAD_TOP + ROAD_H - 32, camX, camX + viewW);
 
   // people, depth-sorted (further back drawn first)
   const ents = [...npcs.map(n => ({ z: n.z, x: n.x, flip: n.v < 0, slot: 'npc' })),
