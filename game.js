@@ -208,6 +208,20 @@ function frame(now) {
   if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
   if (keys['ArrowUp'] || keys['KeyW']) dz -= 1;
   if (keys['ArrowDown'] || keys['KeyS']) dz += 1;
+  if (!dx && !dz) {
+    // xbox/any standard controller: left stick (analog) or d-pad
+    for (const gp of (navigator.getGamepads ? navigator.getGamepads() : [])) {
+      if (!gp || !gp.connected) continue;
+      let gx = gp.axes[0] || 0, gy = gp.axes[1] || 0;
+      if (gp.buttons[14]?.pressed) gx = -1;
+      if (gp.buttons[15]?.pressed) gx = 1;
+      if (gp.buttons[12]?.pressed) gy = -1;
+      if (gp.buttons[13]?.pressed) gy = 1;
+      const len = Math.hypot(gx, gy);
+      if (len > 0.2) { dx = len > 1 ? gx / len : gx; dz = len > 1 ? gy / len : gy; }
+      break;
+    }
+  }
   if (!dx && !dz && joy) {
     const len = Math.hypot(joy.dx, joy.dy);
     if (len > 12) { dx = joy.dx / len; dz = joy.dy / len; }
